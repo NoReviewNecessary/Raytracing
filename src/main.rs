@@ -1,53 +1,130 @@
-use std::fs;
+use std::fs::File;
+use std::io::Write;
 
+enum Shape{
+    Circle {radius: usize, origin: Point},
+    Square {side: usize, origin: Point},
+}
+
+struct Pixel{
+    // RGB format
+    red: u8,
+    green: u8,
+    blue: u8,
+}
+
+struct Window{
+    // Defines the width and height of the file to be rendered
+    width: usize,
+    height: usize
+}
+
+struct Point{
+    x:i32,
+    y:i32
+}
+
+impl Shape{
+    fn shaded(&self, x_value:i32, y_value:i32)-> bool{
+        match self{
+            Shape::Circle { radius, origin } => {
+                y_value.pow(2) + x_value.pow(2) < (*radius as i32).pow(2)
+            }
+            Shape::Square { side, origin } => {
+                x_value.abs() <= *side as i32 && y_value.abs() <= *side as i32
+            } 
+        }
+    }
+    fn origin(&self) -> &Point{
+        match self{
+            Shape::Circle {origin, .. } => origin,
+            Shape::Square {origin, .. } => origin,
+        }
+    }
+}
+
+impl Window{
+    // Functions below translate x and y to graph style coordinates where
+    // (0,0) is considered the center of the window. They take in offset as 
+    // a parameter in case the user wants to plot somewhere besides the center
+    fn translate_x(&self, x_value:i32, x_offset:i32) -> i32{
+        (x_value + x_offset) - (self.width/2) as i32 
+    }
+    fn translate_y(&self, y_value:i32, y_offset:i32) -> i32{
+        (y_value + y_offset) - (self.height/2) as i32
+    }
+}
 
 fn main() {
+    
+    let window = Window{
+        width: 400,
+        height: 300,
+    };
 
-    let window_len: usize = 400;
-    let window_height: usize = 300;
-    let shape_len: usize = 50;
+   // let shape = Shape::Circle(Circle {radius: 50});
+    let shape = Shape::Square {
+        side: 5, 
+        origin: Point { x: 0, y: 0}
+    };
+    let pixel_grid = create_pixel_grid(window, shape);
 
-    create_diamond(window_len, window_height, shape_len);
+    write_ppm3(&pixel_grid, "ppm_example2.ppm");
 
 }
 
+fn create_pixel_grid(window: Window, shape: Shape) -> Vec<Vec<Pixel>>{
+    let mut grid = Vec::with_capacity(window.height);
 
-fn create_diamond(window_len: usize, window_height:usize, shape_len: usize)-> Vec<[usize;2]>{
-    //Uses formula for diamond shading and creates 2 dim vector of shaded coords
-    //Creates shape in center of rendered area
-    
-    let offset_len = window_len / 2;
-    let offset_height = window_height / 2;
-    
-    render(window_len, window_height, shape_len);
-
-    return Vec::new();
-
-}
-
-
-fn render(window_len: usize, window_height: usize, shape_len: usize) -> (){
-    let mut data = format!("P3\n{} {}\n255\n", window_len, window_height);
-
-    let r_2: i32 = (shape_len * shape_len) as i32;
-    for i in 0..window_height{
-        let y_value: i32 = (i) as i32 - (window_height/2) as i32;
-        for j in 0..window_len{
-            let x_value: i32 = (j) as i32 - (window_len/2) as i32;
-            if (y_value * y_value) + (x_value * x_value) < r_2{
-                data += "255 255 255 ";
+    for y in 0..window.height{
+        let y_value: i32 = window.translate_y(y as i32, shape.origin().y);
+        let mut row = Vec::with_capacity(window.width);
+        for x in 0..window.width{
+            let x_value: i32 = window.translate_x(x as i32, shape.origin().x);
+            if shape.shaded(x_value, y_value){
+                row.push(Pixel{
+                    red: 255,
+                    green: 255,
+                    blue: 255
+                })
             }
             else{
-                data += "0 0 0 ";
+                row.push(Pixel{
+                    red: 0,
+                    green: 0,
+                    blue: 0
+                })
             }
         }
-        data += "\n";
+        grid.push(row);
     }
-
-    fs::write("ppm_test1.ppm", data);
-
+    return grid;
 }
 
+fn write_ppm3(pixel_grid: &Vec<Vec<Pixel>>, filename: &str) -> std::io::Result<()>{ 
+    let grid_length = pixel_grid[0].len();
+    let grid_height = pixel_grid.len();
+    let mut file = File::create(filename)?;
+
+    //Header information
+    writeln!(file, "P3"); // Defines the file type to the reader
+    writeln!(file, "{} {}", grid_length, grid_height); // Sets the pixel dimension of the result PPM file
+    writeln!(file, "255"); // Sets ppm to read RGB values between 0..255
+
+    for row in pixel_grid{
+        for pixel in row{
+            write!(file, "{} {} {} ", pixel.red, pixel.green, pixel.blue)?;
+        }
+        writeln!(file)?;
+    }
+
+    Ok(())
+}
+
+//TODO
+fn horizontal_gradient(window_len: usize, color: Pixel){
+
+}
 
 #[cfg(test)]
 mod tests{
@@ -55,6 +132,32 @@ mod tests{
     use super::*;
 
     #[test]
-    fn test_intercepts(){
-        assert_eq!(get_intercepts(2), vec![[-2, 0], [0, 2], [2, 0], [0, -2]]);
-        assert_eq!(get_intercepts(5), vec![[-5, 0], [0, 5], [5, 0], [0, -5]]); } }
+    fn test_circle_shade(){
+        let circle = Shape::Circle { 
+            radius: 5, 
+            origin: Point { x: 0, y: 0}
+        };
+        assert_eq!(circle.shaded(3,4), false);
+        assert_eq!(circle.shaded(7,10), false);
+        assert_eq!(circle.shaded(0,0), true);
+
+    }
+
+    #[test]
+    fn test_square_shade(){
+        let square = Shape::Square {
+            side: 5, 
+            origin: Point { x: 0, y: 0}
+        };
+        assert_eq!(square.shaded(3,4), true);
+        assert_eq!(square.shaded(7,10), false);
+        assert_eq!(square.shaded(0,0), true);
+
+    }
+    #[test]
+    fn check_pows(){
+        assert_eq!((3 as i32).pow(2), 9);
+        assert_eq!((6 as i32).pow(2), 36);
+    }
+
+}
